@@ -1,0 +1,36 @@
+
+services:
+  gpt-crawler:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      - PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - playwright-browsers:/app/.playwright
+    depends_on:
+      - chroma
+    command: ["node", "dist/src/ifixit-crawler.js"]
+    networks:
+      - my-ai-stack_ai_network
+
+  chroma:
+    container_name: chroma-db
+    image: chromadb/chroma
+    volumes:
+      - my-ai-stack_chroma_data:/chroma/chroma
+    networks:
+      - my-ai-stack_ai_network
+
+networks:
+  my-ai-stack_ai_network:
+    external: true
+
+volumes:
+  my-ai-stack_chroma_data:
+    external: true
+  playwright-browsers:

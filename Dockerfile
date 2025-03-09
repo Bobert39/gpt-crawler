@@ -1,54 +1,45 @@
-# Specify the base Docker image. You can read more about
-# the available images at https://crawlee.dev/docs/guides/docker-images
-# You can also use any other image from Docker Hub.
-FROM apify/actor-node-playwright-chrome:18 AS builder
+FROM node:18-slim
 
-# Copy just package.json and package-lock.json
-# to speed up the build using Docker layer cache.
-COPY --chown=myuser package*.json ./
+WORKDIR /app
 
-# Delete the prepare script. It's not needed in the final image.
-RUN npm pkg delete scripts.prepare
+# Install system dependencies for Playwright
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    libgconf-2-4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libgtk-3-0 \
+    libgbm-dev \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libxshmfence1 \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install all dependencies. Don't audit to speed up the installation.
-RUN npm install --include=dev --audit=false
+# Copy package files
+COPY package*.json ./
 
-# Next, copy the source files using the user set
-# in the base image.
-COPY --chown=myuser . ./
+# Install npm dependencies
+RUN npm ci
 
-# Install all dependencies and build the project.
-# Don't audit to speed up the installation.
+# Install Playwright browsers explicitly
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+RUN npx playwright install --with-deps chromium
+RUN npx playwright install chromium
+
+# Copy application code
+COPY . .
+
+# Build the application
 RUN npm run build
 
-# Create final image
-FROM apify/actor-node-playwright-chrome:18
+# Create directories and set permissions
+RUN mkdir -p /app/storage /app/.playwright && \
+    chown -R node:node /app
 
-# Copy only built JS files from builder image
-COPY --from=builder --chown=myuser /home/myuser/dist ./dist
+USER node
 
-# Copy just package.json and package-lock.json
-# to speed up the build using Docker layer cache.
-COPY --chown=myuser package*.json ./
-
-# Install NPM packages, skip optional and development dependencies to
-# keep the image small. Avoid logging too much and print the dependency
-# tree for debugging
-RUN npm pkg delete scripts.prepare \
-    && npm --quiet set progress=false \
-    && npm install --omit=dev --omit=optional \
-    && echo "Installed NPM packages:" \
-    && (npm list --omit=dev --all || true) \
-    && echo "Node.js version:" \
-    && node --version \
-    && echo "NPM version:" \
-    && npm --version
-
-# Next, copy the remaining files and directories with the source code.
-# Since we do this after NPM install, quick build will be really fast
-# for most source file changes.
-COPY --chown=myuser . ./
-
-# Run the image. If you know you won't need headful browsers,
-# you can remove the XVFB start script for a micro perf gain.
-CMD ./start_xvfb_and_run_cmd.sh && npm run start:prod --silent
+CMD ["node", "dist/src/ifixit-crawler.js"]
